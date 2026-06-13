@@ -1,0 +1,48 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${APP_PORT:-8080}:80"
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+      DB_CONNECTION: mysql
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: imtera
+      DB_USERNAME: imtera
+      DB_PASSWORD: secret
+      SESSION_DRIVER: database
+      CACHE_STORE: database
+      SANCTUM_STATEFUL_DOMAINS: localhost:8080,localhost,127.0.0.1:8080,127.0.0.1
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./backend:/var/www/html
+      - /var/www/html/vendor
+      - /var/www/html/node_modules
+      - /var/www/html/parser/node_modules
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: imtera
+      MYSQL_USER: imtera
+      MYSQL_PASSWORD: secret
+      MYSQL_ROOT_PASSWORD: rootsecret
+    ports:
+      - "${DB_PORT:-3307}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mysql-data:

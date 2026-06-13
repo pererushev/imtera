@@ -1,0 +1,13 @@
+{
+  "name": "yandex-maps-parser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright-based Yandex Maps reviews parser",
+  "main": "scrape.js",
+  "scripts": {
+    "scrape": "node scrape.js"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}
