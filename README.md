@@ -69,7 +69,7 @@ php artisan serve
 ```bash
 cd backend/parser
 npm install
-npx playwright install chromium
+npx playwright install chromium --with-deps
 ```
 
 Без Playwright работает HTTP-fallback: загружает первые ~50 отзывов из SSR-разметки страницы.
