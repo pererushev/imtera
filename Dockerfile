@@ -15,6 +15,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/var/www/html/.playwright-browsers
+
 WORKDIR /var/www/html
 
 COPY backend/composer.json backend/composer.lock ./
@@ -26,7 +28,7 @@ RUN composer dump-autoload --optimize \
     && npm ci \
     && npm run build \
     && cd parser && npm install && npx playwright install chromium --with-deps \
-    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/.playwright-browsers
 
 COPY docker/nginx.conf /etc/nginx/sites-available/default
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf

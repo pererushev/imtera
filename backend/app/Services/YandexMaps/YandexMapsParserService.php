@@ -67,6 +67,11 @@ class YandexMapsParserService
 
         try {
             $result = Process::timeout($timeout)
+                ->path(base_path('parser'))
+                ->env([
+                    'PLAYWRIGHT_BROWSERS_PATH' => env('PLAYWRIGHT_BROWSERS_PATH', base_path('.playwright-browsers')),
+                    'HOME' => '/var/www',
+                ])
                 ->run([$nodePath, $scriptPath, $url]);
 
             if (! $result->successful()) {

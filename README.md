@@ -141,7 +141,7 @@ backend/
 | GET | `/api/user` | Текущий пользователь |
 | GET | `/api/settings` | Настройки организации |
 | PUT | `/api/settings` | Сохранить ссылку + парсинг |
-| POST | `/api/settings/sync` | Повторный парсинг |
+| POST | `/api/settings/` | Повторный парсинг |
 | GET | `/api/organization/reviews?page=1` | Отзывы (50 на страницу) |
 
 ## Что доделали бы при большем времени

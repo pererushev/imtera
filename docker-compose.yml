@@ -5,7 +5,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${APP_PORT:-8080}:80"
+    shm_size: "512mb"
     environment:
+      PLAYWRIGHT_BROWSERS_PATH: /var/www/html/.playwright-browsers
       APP_NAME: Imtera
       APP_ENV: production
       APP_DEBUG: "false"

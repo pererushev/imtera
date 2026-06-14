@@ -15,6 +15,8 @@ class OrganizationSyncService
 
     public function sync(Organization $organization): Organization
     {
+        set_time_limit(300); // 5 minutes
+        
         $organization->update([
             'parse_status' => 'parsing',
             'parse_error' => null,
@@ -45,7 +47,7 @@ class OrganizationSyncService
                         'author' => $review->author,
                         'text' => $review->text,
                         'rating' => $review->rating,
-                        'reviewed_at' => $review->date ? date('Y-m-d H:i:s', strtotime($review->date)) : null,
+                        'reviewed_at' => $this->parseReviewDate($review->date),
                         'created_at' => now(),
                         'updated_at' => now(),
                     ], $chunk);
@@ -63,5 +65,13 @@ class OrganizationSyncService
 
             throw $e;
         }
+    }
+    private function parseReviewDate(?string $date): ?string
+    {
+        if ($date === null || $date === '') {
+            return null;
+        }
+        $timestamp = strtotime($date);
+        return $timestamp !== false ? date('Y-m-d H:i:s', $timestamp) : null;
     }
 }
