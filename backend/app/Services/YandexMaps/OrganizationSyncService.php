@@ -2,6 +2,7 @@
 
 namespace App\Services\YandexMaps;
 
+use App\Jobs\SyncOrganizationJob;
 use App\Models\Organization;
 use App\Models\Review;
 use App\Services\YandexMaps\DTO\ParsedOrganization;
@@ -13,10 +14,26 @@ class OrganizationSyncService
         private readonly YandexMapsParserService $parser,
     ) {}
 
+    public function queueSync(Organization $organization): Organization
+    {
+        if (in_array($organization->parse_status, ['pending', 'parsing'], true)) {
+            return $organization;
+        }
+
+        $organization->update([
+            'parse_status' => 'pending',
+            'parse_error' => null,
+        ]);
+
+        SyncOrganizationJob::dispatch($organization->id);
+
+        return $organization->fresh();
+    }
+
     public function sync(Organization $organization): Organization
     {
         set_time_limit(900);
-        
+
         $organization->update([
             'parse_status' => 'parsing',
             'parse_error' => null,
@@ -66,12 +83,14 @@ class OrganizationSyncService
             throw $e;
         }
     }
+
     private function parseReviewDate(?string $date): ?string
     {
         if ($date === null || $date === '') {
             return null;
         }
         $timestamp = strtotime($date);
+
         return $timestamp !== false ? date('Y-m-d H:i:s', $timestamp) : null;
     }
 }

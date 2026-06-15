@@ -38,6 +38,13 @@ return [
     'yandex_parser' => [
         'node_path' => env('YANDEX_PARSER_NODE_PATH', 'node'),
         'timeout' => (int) env('YANDEX_PARSER_TIMEOUT', 600),
+        'http_fallback' => (bool) env('YANDEX_PARSER_HTTP_FALLBACK', false),
+        'aspects' => (bool) env('YANDEX_PARSER_ASPECTS', false),
+        'aspect_limit' => (int) env('YANDEX_PARSER_ASPECT_LIMIT', 15),
+        'scroll_rounds' => (int) env('YANDEX_PARSER_SCROLL_ROUNDS', 60),
+        'scroll_delay_ms' => (int) env('YANDEX_PARSER_SCROLL_DELAY_MS', 500),
+        'scroll_settle_ms' => (int) env('YANDEX_PARSER_SCROLL_SETTLE_MS', 800),
+        'stale_limit' => (int) env('YANDEX_PARSER_STALE_LIMIT', 10),
     ],
 
 ];

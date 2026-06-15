@@ -35,4 +35,14 @@ class YandexMapsException extends Exception
     {
         return new self('Изменилась разметка страницы Яндекс.Карт. Парсер требует обновления.');
     }
+
+    public static function playwrightTimeout(int $seconds): self
+    {
+        return new self("Парсер не уложился в таймаут ({$seconds} с). Увеличьте YANDEX_PARSER_TIMEOUT или отключите аспекты (YANDEX_PARSER_ASPECTS=0).");
+    }
+
+    public static function playwrightUnavailable(string $reason): self
+    {
+        return new self("Playwright-парсер недоступен: {$reason}");
+    }
 }

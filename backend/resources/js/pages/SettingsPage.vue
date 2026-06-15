@@ -23,19 +23,19 @@
                 <div class="flex gap-3">
                     <button
                         type="submit"
-                        :disabled="saving"
+                        :disabled="saving || isParsing"
                         class="bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
                     >
-                        {{ saving ? 'Сохранение и загрузка...' : 'Сохранить' }}
+                        {{ saving ? 'Сохранение...' : 'Сохранить' }}
                     </button>
                     <button
                         v-if="organization"
                         type="button"
                         @click="syncData"
-                        :disabled="syncing"
+                        :disabled="syncing || isParsing"
                         class="border border-gray-300 py-2 px-4 rounded-md hover:bg-gray-50 disabled:opacity-50"
                     >
-                        {{ syncing ? 'Обновление...' : 'Обновить данные' }}
+                        {{ syncing ? 'Запуск...' : 'Обновить данные' }}
                     </button>
                 </div>
             </form>
@@ -46,6 +46,16 @@
             <div v-if="settingsSuccess" class="mt-4 p-3 bg-green-50 text-green-700 rounded-md text-sm">
                 {{ settingsSuccess }}
             </div>
+        </section>
+
+        <section
+            v-if="organization && isParsing"
+            class="bg-blue-50 border border-blue-200 rounded-lg p-6"
+        >
+            <h3 class="font-semibold text-blue-800 mb-2">Загрузка отзывов</h3>
+            <p class="text-blue-700 text-sm">
+                Парсер собирает данные с Яндекс.Карт. Для крупных организаций это может занять несколько минут.
+            </p>
         </section>
 
         <section v-if="organization && organization.parse_status === 'success'">
@@ -70,7 +80,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import api from '../api';
 import OrganizationStats from '../components/OrganizationStats.vue';
 import ReviewsList from '../components/ReviewsList.vue';
@@ -85,13 +95,56 @@ const reviewsLoading = ref(false);
 const settingsError = ref('');
 const settingsSuccess = ref('');
 const reviewsError = ref('');
+let pollTimer = null;
+
+const isParsing = computed(() => {
+    return ['pending', 'parsing'].includes(organization.value?.parse_status);
+});
 
 onMounted(async () => {
     await loadSettings();
     if (organization.value?.parse_status === 'success') {
         await loadReviews(1);
+    } else if (isParsing.value) {
+        startPolling();
     }
 });
+
+onUnmounted(() => {
+    stopPolling();
+});
+
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
+function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(pollParseStatus, 3000);
+}
+
+async function pollParseStatus() {
+    try {
+        const { data } = await api.get('/settings');
+        organization.value = data.organization;
+
+        if (data.organization?.parse_status === 'success') {
+            stopPolling();
+            settingsSuccess.value = 'Данные загружены';
+            settingsError.value = '';
+            await loadReviews(1);
+        } else if (data.organization?.parse_status === 'error') {
+            stopPolling();
+            settingsError.value = data.organization.parse_error || 'Ошибка загрузки данных';
+            settingsSuccess.value = '';
+        }
+    } catch {
+        // keep polling on transient network errors
+    }
+}
 
 async function loadSettings() {
     try {
@@ -100,7 +153,7 @@ async function loadSettings() {
         if (data.organization) {
             yandexUrl.value = data.organization.yandex_url;
         }
-    } catch (error) {
+    } catch {
         settingsError.value = 'Не удалось загрузить настройки';
     }
 }
@@ -114,7 +167,10 @@ async function saveSettings() {
         const { data } = await api.put('/settings', { yandex_url: yandexUrl.value });
         organization.value = data.organization;
         settingsSuccess.value = data.message;
-        if (data.organization?.parse_status === 'success') {
+
+        if (isParsing.value) {
+            startPolling();
+        } else if (data.organization?.parse_status === 'success') {
             await loadReviews(1);
         }
     } catch (error) {
@@ -136,7 +192,12 @@ async function syncData() {
         const { data } = await api.post('/settings/sync');
         organization.value = data.organization;
         settingsSuccess.value = data.message;
-        await loadReviews(1);
+
+        if (isParsing.value) {
+            startPolling();
+        } else if (data.organization?.parse_status === 'success') {
+            await loadReviews(1);
+        }
     } catch (error) {
         settingsError.value = error.response?.data?.message || 'Ошибка обновления';
         if (error.response?.data?.organization) {

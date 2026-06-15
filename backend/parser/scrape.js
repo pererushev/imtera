@@ -5,7 +5,7 @@ const SCROLL_DELAY_MS = parseInt(process.env.YANDEX_PARSER_SCROLL_DELAY_MS || '5
 const SCROLL_SETTLE_MS = parseInt(process.env.YANDEX_PARSER_SCROLL_SETTLE_MS || '800', 10);
 const STALE_LIMIT = parseInt(process.env.YANDEX_PARSER_STALE_LIMIT || '10', 10);
 const ASPECT_LIMIT = parseInt(process.env.YANDEX_PARSER_ASPECT_LIMIT || '15', 10);
-const COLLECT_ASPECTS = process.env.YANDEX_PARSER_ASPECTS !== '0';
+const COLLECT_ASPECTS = process.env.YANDEX_PARSER_ASPECTS === '1';
 
 function parseReviewsFromJson(html) {
     const idx = html.indexOf('"reviews":[{');

@@ -21,4 +21,5 @@ yarn-error.log
 /backend/storage/framework/views/*
 !/backend/storage/framework/views/.gitignore
 /backend/parser/node_modules
+/backend/.playwright-browsers
 backend/.playwright-browsers/

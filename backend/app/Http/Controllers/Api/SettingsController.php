@@ -51,24 +51,12 @@ class SettingsController extends Controller
             ],
         );
 
-        try {
-            $organization = $this->syncService->sync($organization);
-        } catch (YandexMapsException $e) {
-            return response()->json([
-                'message' => $e->getMessage(),
-                'organization' => $this->formatOrganization($organization->fresh()),
-            ], 422);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Не удалось получить данные организации. Попробуйте позже.',
-                'organization' => $this->formatOrganization($organization->fresh()),
-            ], 500);
-        }
+        $organization = $this->syncService->queueSync($organization);
 
         return response()->json([
-            'message' => 'Настройки сохранены, данные загружены',
+            'message' => 'Ссылка сохранена, загрузка отзывов запущена',
             'organization' => $this->formatOrganization($organization),
-        ]);
+        ], 202);
     }
 
     public function sync(Request $request): JsonResponse
@@ -79,24 +67,19 @@ class SettingsController extends Controller
             return response()->json(['message' => 'Сначала укажите ссылку на организацию'], 404);
         }
 
-        try {
-            $organization = $this->syncService->sync($organization);
-        } catch (YandexMapsException $e) {
+        if (in_array($organization->parse_status, ['pending', 'parsing'], true)) {
             return response()->json([
-                'message' => $e->getMessage(),
-                'organization' => $this->formatOrganization($organization->fresh()),
-            ], 422);
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Не удалось обновить данные. Попробуйте позже.',
-                'organization' => $this->formatOrganization($organization->fresh()),
-            ], 500);
+                'message' => 'Загрузка уже выполняется',
+                'organization' => $this->formatOrganization($organization),
+            ], 202);
         }
 
+        $organization = $this->syncService->queueSync($organization);
+
         return response()->json([
-            'message' => 'Данные обновлены',
+            'message' => 'Обновление данных запущено',
             'organization' => $this->formatOrganization($organization),
-        ]);
+        ], 202);
     }
 
     private function formatOrganization(Organization $organization): array

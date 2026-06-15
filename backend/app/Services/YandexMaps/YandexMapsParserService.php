@@ -5,6 +5,7 @@ namespace App\Services\YandexMaps;
 use App\Services\YandexMaps\DTO\ParsedOrganization;
 use App\Services\YandexMaps\DTO\ParsedReview;
 use App\Services\YandexMaps\Exceptions\YandexMapsException;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -22,9 +23,13 @@ class YandexMapsParserService
 
         $result = $this->parseWithPlaywright($normalizedUrl);
 
-        if ($result === null) {
+        if ($result === null && config('services.yandex_parser.http_fallback')) {
             Log::warning('Playwright parser unavailable, falling back to HTTP parser', ['url' => $normalizedUrl]);
             $result = $this->parseWithHttp($normalizedUrl);
+        }
+
+        if ($result === null) {
+            throw YandexMapsException::playwrightUnavailable('проверьте установку Playwright и логи приложения');
         }
 
         if (empty($result['reviews'])) {
@@ -63,21 +68,18 @@ class YandexMapsParserService
         }
 
         $nodePath = config('services.yandex_parser.node_path', 'node');
-        $timeout = config('services.yandex_parser.timeout', 180);
+        $timeout = config('services.yandex_parser.timeout', 600);
 
         try {
             $result = Process::timeout($timeout)
                 ->path(base_path('parser'))
-                ->env([
-                    'PLAYWRIGHT_BROWSERS_PATH' => env('PLAYWRIGHT_BROWSERS_PATH', base_path('.playwright-browsers')),
-                    'HOME' => '/var/www',
-                ])
+                ->env($this->parserProcessEnv())
                 ->run([$nodePath, $scriptPath, $url]);
 
             if (! $result->successful()) {
                 Log::error('Playwright parser failed', [
                     'stderr' => $result->errorOutput(),
-                    'stdout' => $result->output(),
+                    'stdout' => substr($result->output(), 0, 500),
                 ]);
 
                 return null;
@@ -86,7 +88,9 @@ class YandexMapsParserService
             $data = json_decode($result->output(), true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                Log::error('Playwright parser returned invalid JSON', ['output' => $result->output()]);
+                Log::error('Playwright parser returned invalid JSON', [
+                    'output' => substr($result->output(), 0, 500),
+                ]);
 
                 return null;
             }
@@ -96,11 +100,38 @@ class YandexMapsParserService
             }
 
             return $data;
+        } catch (ProcessTimedOutException $e) {
+            throw YandexMapsException::playwrightTimeout($timeout);
+        } catch (YandexMapsException $e) {
+            throw $e;
         } catch (\Throwable $e) {
+            if (str_contains($e->getMessage(), 'exceeded the timeout')) {
+                throw YandexMapsException::playwrightTimeout($timeout);
+            }
+
             Log::error('Playwright parser exception', ['message' => $e->getMessage()]);
 
             return null;
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function parserProcessEnv(): array
+    {
+        $config = config('services.yandex_parser');
+
+        return [
+            'PLAYWRIGHT_BROWSERS_PATH' => env('PLAYWRIGHT_BROWSERS_PATH', base_path('.playwright-browsers')),
+            'HOME' => env('PLAYWRIGHT_HOME', '/var/www'),
+            'YANDEX_PARSER_ASPECTS' => $config['aspects'] ? '1' : '0',
+            'YANDEX_PARSER_ASPECT_LIMIT' => (string) $config['aspect_limit'],
+            'YANDEX_PARSER_SCROLL_ROUNDS' => (string) $config['scroll_rounds'],
+            'YANDEX_PARSER_SCROLL_DELAY_MS' => (string) $config['scroll_delay_ms'],
+            'YANDEX_PARSER_SCROLL_SETTLE_MS' => (string) $config['scroll_settle_ms'],
+            'YANDEX_PARSER_STALE_LIMIT' => (string) $config['stale_limit'],
+        ];
     }
 
     private function parseWithHttp(string $url): array
