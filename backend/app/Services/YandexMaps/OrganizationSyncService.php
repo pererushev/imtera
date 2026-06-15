@@ -15,7 +15,7 @@ class OrganizationSyncService
 
     public function sync(Organization $organization): Organization
     {
-        set_time_limit(300); // 5 minutes
+        set_time_limit(900);
         
         $organization->update([
             'parse_status' => 'parsing',

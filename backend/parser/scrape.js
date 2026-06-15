@@ -1,8 +1,11 @@
 const { chromium } = require('playwright');
 
-const SCROLL_ROUNDS = 40;
-const SCROLL_DELAY_MS = 1200;
-const STALE_LIMIT = 4;
+const SCROLL_ROUNDS = parseInt(process.env.YANDEX_PARSER_SCROLL_ROUNDS || '60', 10);
+const SCROLL_DELAY_MS = parseInt(process.env.YANDEX_PARSER_SCROLL_DELAY_MS || '500', 10);
+const SCROLL_SETTLE_MS = parseInt(process.env.YANDEX_PARSER_SCROLL_SETTLE_MS || '800', 10);
+const STALE_LIMIT = parseInt(process.env.YANDEX_PARSER_STALE_LIMIT || '10', 10);
+const ASPECT_LIMIT = parseInt(process.env.YANDEX_PARSER_ASPECT_LIMIT || '15', 10);
+const COLLECT_ASPECTS = process.env.YANDEX_PARSER_ASPECTS !== '0';
 
 function parseReviewsFromJson(html) {
     const idx = html.indexOf('"reviews":[{');
@@ -56,41 +59,106 @@ function extractCompanyInfo(html) {
     return company;
 }
 
-async function scrape(url) {
-    const browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+function addReviews(allReviews, reviews) {
+    for (const review of reviews) {
+        const normalized = normalizeReview(review);
+        allReviews.set(normalized.review_id, normalized);
+    }
+}
 
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'ru-RU',
-        viewport: { width: 1280, height: 900 },
-    });
-
-    const page = await context.newPage();
-    const allReviews = new Map();
-
+function attachReviewCollector(page, allReviews, aspectNames) {
     page.on('response', async (response) => {
         const responseUrl = response.url();
-        if (!responseUrl.includes('fetchReviews') && !responseUrl.includes('getReviews')) {
+        if (!responseUrl.includes('fetchReviews')) {
             return;
         }
 
         try {
-            const contentType = response.headers()['content-type'] || '';
-            if (!contentType.includes('json')) return;
-
             const data = await response.json();
-            const reviews = data.reviews || data.data?.reviews || [];
-            for (const review of reviews) {
-                const normalized = normalizeReview(review);
-                allReviews.set(normalized.review_id, normalized);
+            if (data.error) {
+                return;
+            }
+
+            addReviews(allReviews, data.data?.reviews || data.reviews || []);
+
+            const aspects = data.data?.aspects;
+            if (aspects?.length) {
+                aspectNames.splice(0, aspectNames.length, ...aspects.map((aspect) => aspect.text).filter(Boolean));
             }
         } catch {
             // ignore non-JSON or parse errors
         }
     });
+}
+
+async function scrollForMore(page, allReviews) {
+    let prevCount = allReviews.size;
+    let staleRounds = 0;
+
+    for (let round = 0; round < SCROLL_ROUNDS; round++) {
+        await page.mouse.wheel(0, 5000);
+        await page.waitForTimeout(SCROLL_DELAY_MS);
+
+        await page.evaluate(() => {
+            document.querySelectorAll('.scroll__container, .business-reviews-card-view__reviews').forEach((el) => {
+                el.scrollTop = el.scrollHeight;
+            });
+        });
+
+        await page.waitForTimeout(SCROLL_SETTLE_MS);
+
+        const currentCount = allReviews.size;
+        if (currentCount === prevCount) {
+            staleRounds++;
+            if (staleRounds >= STALE_LIMIT) {
+                break;
+            }
+        } else {
+            staleRounds = 0;
+        }
+        prevCount = currentCount;
+    }
+}
+
+async function resetReviewsView(page) {
+    try {
+        const tab = page.getByRole('tab', { name: /Отзывы/i }).first();
+        if (await tab.count()) {
+            await tab.click({ force: true });
+            await page.waitForTimeout(2000);
+        }
+    } catch {
+        // already on reviews tab or overlay blocks the click
+    }
+}
+
+async function clickAspectFilter(page, aspectName) {
+    const escaped = aspectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const chip = page.getByText(new RegExp(`${escaped}\\s*•`)).first();
+    if (!(await chip.count())) {
+        return false;
+    }
+
+    await chip.click();
+    await page.waitForTimeout(2500);
+    return true;
+}
+
+async function scrape(url) {
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--no-sandbox'],
+    });
+
+    const page = await browser.newPage({
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        locale: 'ru-RU',
+        viewport: { width: 1280, height: 900 },
+    });
+
+    const allReviews = new Map();
+    const aspectNames = [];
+    attachReviewCollector(page, allReviews, aspectNames);
 
     let reviewsUrl = url.replace(/\/$/, '');
     if (!reviewsUrl.includes('/reviews')) {
@@ -98,93 +166,29 @@ async function scrape(url) {
     }
     reviewsUrl += '/';
 
-    await page.goto(reviewsUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
-    await page.waitForTimeout(3000);
+    await page.goto(reviewsUrl, { waitUntil: 'networkidle', timeout: 120000 });
+    await page.waitForTimeout(2000);
 
     const pageHtml = await page.content();
     const company = extractCompanyInfo(pageHtml);
+    addReviews(allReviews, parseReviewsFromJson(pageHtml));
 
-    for (const review of parseReviewsFromJson(pageHtml)) {
-        const normalized = normalizeReview(review);
-        allReviews.set(normalized.review_id, normalized);
-    }
+    await scrollForMore(page, allReviews);
 
-    const domReviews = await page.evaluate(() => {
-        const results = [];
-        document.querySelectorAll('.business-review-view__info').forEach((el, index) => {
-            const author = el.querySelector('[itemprop="name"]')?.textContent?.trim() || '';
-            const dateEl = el.querySelector('.business-review-view__date');
-            const date = dateEl?.getAttribute('datetime') || dateEl?.textContent?.trim() || '';
-            const text = el.querySelector('.business-review-view__body')?.textContent?.trim() || '';
-            const ratingEl = el.querySelector('[itemprop="ratingValue"]');
-            const rating = ratingEl
-                ? parseInt(ratingEl.getAttribute('content') || ratingEl.textContent || '0', 10)
-                : 0;
+    if (COLLECT_ASPECTS && aspectNames.length > 0) {
+        for (const aspectName of aspectNames.slice(0, ASPECT_LIMIT)) {
+            try {
+                await resetReviewsView(page);
 
-            if (author || text) {
-                results.push({
-                    review_id: `dom-${index}`,
-                    author,
-                    text,
-                    rating,
-                    date,
-                });
-            }
-        });
-        return results;
-    });
-
-    for (const review of domReviews) {
-        if (!allReviews.has(review.review_id)) {
-            allReviews.set(review.review_id, review);
-        }
-    }
-
-    let prevCount = allReviews.size;
-    let staleRounds = 0;
-
-    for (let round = 0; round < SCROLL_ROUNDS; round++) {
-        await page.evaluate(() => {
-            const selectors = [
-                '.scroll__container',
-                '.business-reviews-card-view__reviews',
-                '.business-card-view__main',
-                '.scroll-container',
-            ];
-
-            for (const selector of selectors) {
-                const el = document.querySelector(selector);
-                if (el) {
-                    el.scrollTop = el.scrollHeight;
+                if (!(await clickAspectFilter(page, aspectName))) {
+                    continue;
                 }
+
+                await scrollForMore(page, allReviews);
+            } catch {
+                // skip failed aspect filter and continue with the next one
             }
-
-            window.scrollTo(0, document.body.scrollHeight);
-        });
-
-        await page.waitForTimeout(SCROLL_DELAY_MS);
-
-        try {
-            const showMore = page.locator(
-                'button:has-text("Показать ещё"), button:has-text("ещё"), span:has-text("Показать ещё")',
-            ).first();
-
-            if (await showMore.isVisible({ timeout: 300 })) {
-                await showMore.click();
-                await page.waitForTimeout(2000);
-            }
-        } catch {
-            // no show more button
         }
-
-        const currentCount = allReviews.size;
-        if (currentCount === prevCount) {
-            staleRounds++;
-            if (staleRounds >= STALE_LIMIT) break;
-        } else {
-            staleRounds = 0;
-        }
-        prevCount = currentCount;
     }
 
     await browser.close();

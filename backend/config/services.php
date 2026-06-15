@@ -37,7 +37,7 @@ return [
 
     'yandex_parser' => [
         'node_path' => env('YANDEX_PARSER_NODE_PATH', 'node'),
-        'timeout' => (int) env('YANDEX_PARSER_TIMEOUT', 180),
+        'timeout' => (int) env('YANDEX_PARSER_TIMEOUT', 600),
     ],
 
 ];
