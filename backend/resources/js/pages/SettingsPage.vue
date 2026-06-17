@@ -32,10 +32,10 @@
                         v-if="organization"
                         type="button"
                         @click="syncData"
-                        :disabled="syncing || isParsing"
+                        :disabled="syncing || isActivelyParsing"
                         class="border border-gray-300 py-2 px-4 rounded-md hover:bg-gray-50 disabled:opacity-50"
                     >
-                        {{ syncing ? 'Запуск...' : 'Обновить данные' }}
+                        {{ syncing ? 'Запуск...' : syncButtonLabel }}
                     </button>
                 </div>
             </form>
@@ -55,6 +55,18 @@
             <h3 class="font-semibold text-blue-800 mb-2">Загрузка отзывов</h3>
             <p class="text-blue-700 text-sm">
                 Парсер собирает данные с Яндекс.Карт. Для крупных организаций это может занять несколько минут.
+            </p>
+            <p
+                v-if="organization.fetched_reviews_count > 0"
+                class="text-blue-600 text-sm mt-2"
+            >
+                Загружено отзывов: {{ organization.fetched_reviews_count }}
+                <span v-if="organization.reviews_count">
+                    из {{ organization.reviews_count }}
+                </span>
+            </p>
+            <p v-if="pollTimedOut" class="text-amber-700 text-sm mt-2">
+                Загрузка занимает слишком много времени. Нажмите «Повторить загрузку».
             </p>
         </section>
 
@@ -95,10 +107,24 @@ const reviewsLoading = ref(false);
 const settingsError = ref('');
 const settingsSuccess = ref('');
 const reviewsError = ref('');
+const pollTimedOut = ref(false);
 let pollTimer = null;
+let pollStartedAt = null;
+
+const POLL_TIMEOUT_MS = 15 * 60 * 1000;
 
 const isParsing = computed(() => {
     return ['pending', 'parsing'].includes(organization.value?.parse_status);
+});
+
+const isActivelyParsing = computed(() => organization.value?.parse_status === 'parsing');
+
+const syncButtonLabel = computed(() => {
+    if (organization.value?.parse_status === 'pending') {
+        return 'Повторить загрузку';
+    }
+
+    return 'Обновить данные';
 });
 
 onMounted(async () => {
@@ -123,10 +149,18 @@ function stopPolling() {
 
 function startPolling() {
     stopPolling();
+    pollTimedOut.value = false;
+    pollStartedAt = Date.now();
     pollTimer = setInterval(pollParseStatus, 3000);
 }
 
 async function pollParseStatus() {
+    if (pollStartedAt && Date.now() - pollStartedAt > POLL_TIMEOUT_MS) {
+        stopPolling();
+        pollTimedOut.value = true;
+        return;
+    }
+
     try {
         const { data } = await api.get('/settings');
         organization.value = data.organization;

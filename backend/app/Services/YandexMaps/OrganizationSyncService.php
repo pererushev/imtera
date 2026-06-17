@@ -16,7 +16,7 @@ class OrganizationSyncService
 
     public function queueSync(Organization $organization): Organization
     {
-        if (in_array($organization->parse_status, ['pending', 'parsing'], true)) {
+        if ($organization->parse_status === 'parsing') {
             return $organization;
         }
 

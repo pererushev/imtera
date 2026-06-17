@@ -4,10 +4,11 @@ namespace App\Jobs;
 
 use App\Models\Organization;
 use App\Services\YandexMaps\OrganizationSyncService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class SyncOrganizationJob implements ShouldQueue
+class SyncOrganizationJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -15,9 +16,16 @@ class SyncOrganizationJob implements ShouldQueue
 
     public int $tries = 1;
 
+    public int $uniqueFor = 900;
+
     public function __construct(
         public int $organizationId,
     ) {}
+
+    public function uniqueId(): string
+    {
+        return (string) $this->organizationId;
+    }
 
     public function handle(OrganizationSyncService $syncService): void
     {

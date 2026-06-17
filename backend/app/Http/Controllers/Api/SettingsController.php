@@ -44,11 +44,7 @@ class SettingsController extends Controller
 
         $organization = Organization::updateOrCreate(
             ['user_id' => $request->user()->id],
-            [
-                'yandex_url' => $normalizedUrl,
-                'parse_status' => 'pending',
-                'parse_error' => null,
-            ],
+            ['yandex_url' => $normalizedUrl],
         );
 
         $organization = $this->syncService->queueSync($organization);
@@ -67,7 +63,7 @@ class SettingsController extends Controller
             return response()->json(['message' => 'Сначала укажите ссылку на организацию'], 404);
         }
 
-        if (in_array($organization->parse_status, ['pending', 'parsing'], true)) {
+        if ($organization->parse_status === 'parsing') {
             return response()->json([
                 'message' => 'Загрузка уже выполняется',
                 'organization' => $this->formatOrganization($organization),
